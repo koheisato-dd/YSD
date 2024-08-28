@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: je2121dv-us-00a-kansasupport-deployment  # Deployment名を変更する
+  labels:
+    tags.datadoghq.com/env: "APP"  # Datadog追加
+    tags.datadoghq.com/service: "je2121dv-us-00a-kansasupport-deployment" # Datadog追加 Deployment名を変更する。
+    tags.datadoghq.com/version: "1.0.0" # Datadog追加　任意のバージョンに変更する。
+spec:
+  replicas: 1  #AKSのリソース不足の可能性があるため、まずはreplicas1を設置する CTC宮澤 2022/05/02
+  selector:
+    matchLabels:
+      app: je2121dv-us-00a-kansasupport-api  # appを変更する
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: je2121dv-us-00a-kansasupport-api  # appを変更する
+        tags.datadoghq.com/env: "APP"  # Datadog追加
+        tags.datadoghq.com/service: "je2121dv-us-00a-kansasupport-deployment" # Datadog追加 Deployment名を変更する。
+        tags.datadoghq.com/version: "1.0.0" # Datadog追加　任意のバージョンに変更する。
+        admission.datadoghq.com/enabled: "true"  # Datadog追加
+      annotations:  # Datadog追加
+        admission.datadoghq.com/java-lib.version: "v1.38.0"  # Datadog追加
+    spec:
+      # volumes: --削除対象 START
+      # - name: oneagent
+      #   emptyDir: {} 
+      # initContainers: 
+      # - name: install-oneagent
+      #   image: alpine:3.14
+      #   command:
+      #   - /bin/sh
+      #   args:
+      #   - -c
+      #   - ARCHIVE=$(mktemp) && wget -O $ARCHIVE "$DT_API_URL/v1/deployment/installer/agent/unix/paas/latest?Api-Token=$DT_PAAS_TOKEN&$DT_ONEAGENT_OPTIONS" && unzip -o -d /opt/dynatrace/oneagent $ARCHIVE && rm -f $ARCHIVE
+      #   env:
+      #   - name: DT_API_URL
+      #     value: https://zpf36779.live.dynatrace.com/api
+      #   - name: DT_PAAS_TOKEN
+      #     value: dt0c01.4BCLLV6CGAD5ZQRQHIY5MHJT.XDN5OCEOS7M64FZ5QM4YMY5GK6466IHQC5G3VGCMPKEBC2CWX6OX35KOI5PVIUOC
+      #   - name: DT_ONEAGENT_OPTIONS
+      #     value: flavor=default&include=java
+      #   volumeMounts:
+      #   - mountPath: /opt/dynatrace/oneagent
+      #     name: oneagent --削除対象 END
+      securityContext:
+        runAsUser: 2000
+        runAsGroup: 2000
+      containers:
+        - name: je2121dv-us-00a-kansasupport-container             # containerを変更する
+          image: @@imagesource@@
+          imagePullPolicy: Always
+          lifecycle:
+            preStop:
+              exec:
+                command: [ "sh", "-c", "while :; do sleep 20; done" ]
+          ports:
+             - containerPort: 8080 #containerPortは8080で設定 2022/04/28 CTC宮澤
+          # volumeMounts: --削除対象 START
+          #    - name: oneagent
+          #      mountPath: /opt/dynatrace/oneagent --削除対象 END
+          # cpu、memory等の設定値はアプリチームごとに編集（requestsとlimitsで同じ値にする）
+          resources: #リソーシーズはデフォルト明記してcpu、memoryを確保する必要があるため、疎通確認段階で必要 2022/04/28 CTC宮澤
+            requests:
+              cpu: "1"
+              memory: "3Gi"
+            limits:
+              cpu: "1"
+              memory: "3Gi"
+          # Path、Port等の設定値はアプリチームごとに編集
+          livenessProbe: #podの死活監視 #疎通確認後、ブラッシュアップして対応可能 2022/04/28 CTC宮澤
+            httpGet:
+              # path: /actuator/health
+              path: /actuator/info
+              port: 8090
+              scheme: HTTP
+              httpHeaders:
+              - name: Authorization
+                value: Basic a3ljOmt5Yw== # Actuatorのエンドポイントに対するユーザ名とパスワードをBase64でエンコードしたものを設定する
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+            timeoutSeconds: 30
+          # Path、Port等の設定値はアプリチームごとに編集 #後でOK
+          readinessProbe : #サービスとして使えるか否かの死活監視 #疎通確認後、ブラッシュアップして対応可能 2022/04/28 CTC宮澤
+            httpGet:
+              # path: /actuator/health
+              path: /actuator/info
+              port: 8090
+              scheme: HTTP
+              httpHeaders:
+              - name: Authorization
+                value: Basic a3ljOmt5Yw== # Actuatorのエンドポイントに対するユーザ名とパスワードをBase64でエンコードしたものを設定する
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+            timeoutSeconds: 30
+          envFrom:
+            - configMapRef:
+                name: je2121dv-us-00a-kansasupport-values          # ConfigMap名を変更する
+            - secretRef:
+                name: je2121dv-us-00a-kansasupport-secrets         # Secret名を変更する
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms2G -Xmx2G -XX:MaxMetaspaceSize=256m -XX:MetaspaceSize=256m -Xss1m -XX:ReservedCodeCacheSize=240m -XX:MaxDirectMemorySize=10m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/urandom"
+            - name: MALLOC_ARENA_MAX
+              value: "2"
+            - name: DD_LOGS_INJECTION # Datadog追加
+              value: "true" # Datadog追加
+            # - name: LD_PRELOAD --削除対象 START
+            #   value: /opt/dynatrace/oneagent/agent/lib64/liboneagentproc.so --削除対象 END

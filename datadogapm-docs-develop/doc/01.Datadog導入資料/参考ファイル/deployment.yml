@@ -1,0 +1,133 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: @@deploymentname@@
+  labels:
+    version: @@version@@
+    tags.datadoghq.com/env: "APP"  # Datadog追加
+    tags.datadoghq.com/service: @@deploymentname@@ # Datadog追加
+    tags.datadoghq.com/version: @@version@@ # Datadog追加
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: @@projectname@@
+  minReadySeconds: 60
+  progressDeadlineSeconds: 600
+  strategy:
+    type: Recreate
+    # type: RollingUpdate
+    # rollingUpdate:
+    #   maxSurge: 1
+    #   maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: @@projectname@@
+        version: @@version@@
+        color: @@color@@
+        tags.datadoghq.com/env: "APP"  # Datadog追加
+        tags.datadoghq.com/service: @@deploymentname@@  # Datadog追加
+        tags.datadoghq.com/version: @@version@@  # Datadog追加
+        admission.datadoghq.com/enabled: "true"  # Datadog追加
+      annotations:  # Datadog追加
+        admission.datadoghq.com/java-lib.version: "v1.38.0"  # Datadog追加
+    spec:
+      imagePullSecrets:
+      - name: @@imgsecretname@@
+      # dynatrace設定箇所-1 START　--削除対象 START　
+      # volumes:　--削除対象
+      # - name: oneagent
+      #   emptyDir: {}
+      # dynatrace設定箇所-1 END　--削除対象 END
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsGroup: @@gcode_id@@
+        runAsUser: @@gcode_id@@
+      # dynatrace設定箇所-2 START --削除対象 START
+      # initContainers:
+      # - name: install-oneagent
+      #   image: alpine:3.14
+      #   command:
+      #   - /bin/sh
+      #   args:
+      #   - -c
+      #   - ARCHIVE=$(mktemp) && wget -O $ARCHIVE "$DT_API_URL/v1/deployment/installer/agent/unix/paas/latest?Api-Token=$DT_PAAS_TOKEN&$DT_ONEAGENT_OPTIONS" && unzip -o -d /opt/dynatrace/oneagent $ARCHIVE && rm -f $ARCHIVE
+      #   env:
+      #   - name: DT_API_URL
+      #     value: https://nov47471.live.dynatrace.com/api
+      #   - name: DT_PAAS_TOKEN
+      #     value: dt0c01.NAB25RTCOL54CQULO5A46MI5.SFWRVVFFP2OA6G2WHQAENC7MZMPSWGHTTNOKA6ZS7G54XWD3AHESQUXRO2NUYPEJ
+      #   - name: DT_ONEAGENT_OPTIONS
+      #     value: flavor=default&include=java
+      #   volumeMounts:
+      #   - mountPath: /opt/dynatrace/oneagent
+      #     name: oneagent
+      # dynatrace設定箇所-2 END --削除対象 END
+      containers:
+      - name: @@deploymentname@@
+        image: @@imagesource@@
+        ports:
+        - containerPort: @@targetport@@
+        livenessProbe:
+          httpGet:
+            path: /actuator/info
+            port: 8090
+            httpHeaders:
+            - name: Authorization
+              value: Basic YWN0dWF0b3I6YWN0dWF0b3I= # Actuatorのエンドポイントに対するユーザ名とパスワードをBase64でエンコードしたものを設定する
+          initialDelaySeconds: 30
+          timeoutSeconds: 30
+          periodSeconds: 60
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/info
+            port: 8090
+            httpHeaders:
+            - name: Authorization
+              value: Basic YWN0dWF0b3I6YWN0dWF0b3I= # Actuatorのエンドポイントに対するユーザ名とパスワードをBase64でエンコードしたものを設定する
+          initialDelaySeconds: 30
+          timeoutSeconds: 30
+          periodSeconds: 60
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          readOnlyRootFilesystem: false
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+          requests:
+            memory: "1Gi"
+            cpu: "1"
+        # dynatrace設定箇所-3 START --削除対象 START
+        # volumeMounts:
+        #   - name: oneagent
+        #     mountPath: /opt/dynatrace/oneagent
+        # dynatrace設定箇所-3 END --削除対象 END
+        # envFrom:
+        # - configMapRef:
+        #     name: xxxxx-configmap
+        # - secretRef:
+        #     name: xxxxx-secret
+        env:
+        # アプリで環境変数を利用する場合はここに設定
+        # - name: ENV_VALUE
+        #   value: xxxxxx
+        - name: JAVA_OPTS
+          value: "-Xms600m -Xmx600m -XX:MaxMetaspaceSize=256m -XX:MetaspaceSize=256m -Xss1m -XX:ReservedCodeCacheSize=240m -XX:MaxDirectMemorySize=10m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/urandom -Duser.timezone=Asia/Tokyo -Dfile.encoding=UTF-8"
+        - name: MALLOC_ARENA_MAX
+          value: "2"
+        - name: SPRING_PROFILES_ACTIVE
+          value: "dev"
+        - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+          value: "InstrumentationKey=4ea607b5-3189-4d0f-b73a-fcb667864d8e;IngestionEndpoint=https://japaneast-0.in.applicationinsights.azure.com/;LiveEndpoint=https://japaneast.livediagnostics.monitor.azure.com/;ApplicationId=223181d8-42f1-4d5c-8d69-ff4a0682c320"
+        - name: DD_LOGS_INJECTION # Datadog追加
+          value: "true" # Datadog追加
+        # # dynatrace設定箇所-4 START --削除対象 START
+        # - name: LD_PRELOAD
+        #   value: /opt/dynatrace/oneagent/agent/lib64/liboneagentproc.so
+        # dynatrace設定箇所-4 END --削除対象 END
